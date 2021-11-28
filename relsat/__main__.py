@@ -45,7 +45,14 @@ def run():
     ])
 
     thy = Theory([mul, inv, one], [cl1, cl2, cl3, cl4])
-    thy.print()
+
+    thy.create_tables(2)
+    mul.set_value([0, 1, 0], 1)
+    thy.print_tables()
+
+    a = thy.clauses[0].get_table()
+    print(thy.clauses[0])
+    print(a.flatten())
 
 
 if __name__ == '__main__':
