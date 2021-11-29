@@ -147,7 +147,8 @@ class Literal:
         for var in self.vars:
             if var in vars:
                 idx = vars.index(var)
-                table = table.diagonal(axis1=idx, axis2=len(vars)).swapaxes(idx, -1)
+                table = table.diagonal(
+                    axis1=idx, axis2=len(vars)).swapaxes(idx, -1)
             else:
                 vars.append(var)
         assert len(vars) == len(table.shape)
@@ -181,6 +182,7 @@ class Literal:
         Returns whether something has been updated.
         """
         assert mask.ndim == self.arity and mask.dtype == bool
+        assert value in [-1, 0, 1]
 
         # speed optimization
         if not mask.any():
@@ -231,8 +233,16 @@ class Literal:
         return self.symbol.update_masked(mask, value)
 
     def set_constant(self, value: int):
+        assert value in [-1, 0, 1]
         mask = numpy.ones([1 for _ in range(self.arity)], dtype=bool)
         self.update_masked(mask, value)
+
+    def get_value_mask(self, value: int) -> numpy.ndarray:
+        """
+        Returns a bool table where the value table equals the given value.
+        """
+        assert value in [-1, 0, 1]
+        return self.table == (value if self.sign else -value)
 
     def get_table(self):
         return self.table if self.sign else -self.table
@@ -280,11 +290,10 @@ class Clause:
 
     def satisfied(self) -> int:
         """
-        Returns a positive integer if this clause if satisfied
-        in all combination of universally quantified variables,
-        zero if it satisfied in some cases but undefined in others,
-        and negative value if there is at least one case where it
-        is not satisfied.
+        Returns a positive integer if this clause is satisfied for all
+        combination of the universally quantified variables, negative one if
+        it is not satisfied for at least one combination, and zero if
+        undefined for some combination and satisfied for others.
         """
         return numpy.amin(self.get_table())
 
@@ -297,19 +306,22 @@ class Clause:
         if len(self.literals) <= 1:
             return False
 
-        print(self)
         updated = False
         for target in range(len(self.literals)):
-            value = None
+            value1 = None
+            value2 = None
             for idx, lit in enumerate(self.literals):
                 if idx == target:
-                    continue
-                if value is None:
-                    value = lit.get_table()
+                    value2 = lit.get_table()
+                elif value1 is None:
+                    value1 = lit.get_table()
                 else:
-                    value = numpy.maximum(value, lit.get_table())
-            assert value.dtype == numpy.int8
-            print(idx, value.flatten())
+                    value1 = numpy.maximum(value1, lit.get_table())
+            assert value1.dtype == numpy.int8
+            forced = numpy.logical_and(value1 < 0, value2 == 0)
+
+            if self.literals[target].update_masked(forced, 1):
+                updated = True
 
         return updated
 
@@ -344,13 +356,32 @@ class Theory:
             print(sym.name + ": " + str(sym.table.flatten()))
 
     def print_satisfied(self):
+        print("satisfied:")
         for cla in self.clauses:
-            val = cla.satisfied()
-            print(str(cla) + ": " + str(val))
+            if cla.satisfied() > 0:
+                print("  " + str(cla))
+        print("unknown:")
+        for cla in self.clauses:
+            if cla.satisfied() == 0:
+                print("  " + str(cla))
+        print("failed:")
+        for cla in self.clauses:
+            if cla.satisfied() < 0:
+                print("  " + str(cla))
 
     def propagate(self):
         updated = False
-        for cla in self.clauses:
+        counter = 0
+        idx = 0
+        while counter < len(self.clauses):
+            cla = self.clauses[idx]
             if cla.propagate():
                 updated = True
+                counter = 1
+            else:
+                counter += 1
+            idx += 1
+            if idx >= len(self.clauses):
+                idx = 0
         return updated
+print

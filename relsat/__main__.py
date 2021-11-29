@@ -48,16 +48,31 @@ def run():
                 Literal(3, False, mul, [1, 0, 2]),
                 Literal(3, True, one, [2]),
             ]),
+            Clause([
+                Literal(4, False, mul, [0, 1, 2]),
+                Literal(4, False, mul, [0, 1, 3]),
+                Literal(4, True, equ, [2, 3]),
+            ]),
+            Clause([
+                Literal(3, False, inv, [0, 1]),
+                Literal(3, False, inv, [0, 2]),
+                Literal(3, True, equ, [1, 2]),
+            ]),
+            Clause([
+                Literal(2, False, one, [0]),
+                Literal(2, False, one, [1]),
+                Literal(2, True, equ, [0, 1]),
+            ])
         ])
 
     thy.create_tables(2)
     equ.set_equality()
-    one.set_value([1], -1)
-    mul.set_value([0, 0, 0], 1)
-    mul.set_value([0, 1, 1], 1)
+    one.set_value([0], 1)
     thy.print_tables()
+    print()
     thy.propagate()
     thy.print_tables()
+    thy.print_satisfied()
 
 
 if __name__ == '__main__':
