@@ -67,13 +67,20 @@ def run():
 
     thy.create_tables(2)
     equ.set_equality()
-    one.set_value([0], 1)
-    thy.print_tables()
-    print()
-    thy.propagate()
-    thy.print_tables()
-    thy.print_satisfied()
+    thy.print()
 
+    # one.set_value([0], 1)
+    mul.set_value([1, 0, 1], -1)
+    thy.propagate()
+    thy.print()
+
+    inv.set_value([1, 1], 1)
+    thy.propagate()
+    thy.print()
+
+    mul.set_value([1, 1, 0], 1)
+    thy.propagate()
+    thy.print()
 
 if __name__ == '__main__':
     run()

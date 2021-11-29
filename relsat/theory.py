@@ -84,9 +84,13 @@ class Symbol:
         elif value < 0:
             assert not numpy.logical_and(self.table > 0, mask).any()
 
-        changed = numpy.logical_and(self.table == 0, mask).any()
+        changed = numpy.logical_and(self.table == 0, mask)
+        for coords in numpy.transpose(changed.nonzero()):
+            print("propagated " + self.name + "(" + ",".join([str(c) for c in coords]) +
+                  ") = " + str(value))
+
         self.table[mask] = value
-        return changed
+        return changed.any()
 
     def print_table(self):
         print(self.table.flatten())
@@ -203,7 +207,8 @@ class Literal:
                 axes.append(var)
         mask = mask.view().transpose(axes)
         if keep < self.arity:
-            mask.shape = list(mask.shape[:keep]) + [-1]
+            # this might copy as last axis might not be continuous
+            mask = mask.reshape(list(mask.shape[:keep]) + [-1])
             mask = mask.any(axis=-1, keepdims=False)
 
         # zero arity case (no size info)
@@ -321,6 +326,7 @@ class Clause:
             forced = numpy.logical_and(value1 < 0, value2 == 0)
 
             if self.literals[target].update_masked(forced, 1):
+                print("  by " + str(self))
                 updated = True
 
         return updated
@@ -384,4 +390,8 @@ class Theory:
             if idx >= len(self.clauses):
                 idx = 0
         return updated
-print
+
+    def print(self):
+        self.print_tables()
+        self.print_satisfied()
+        print()
