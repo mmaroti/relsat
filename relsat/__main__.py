@@ -14,45 +14,51 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from relsat.theory import Symbol, Clause, Literal, Theory
+from relsat.theory import *
+import numpy
 
 
 def run():
+    equ = Symbol('equ', 2)
     mul = Symbol('mul', 3)
     inv = Symbol('inv', 2)
     one = Symbol('one', 1)
 
-    cl1 = Clause([
-        Literal(6, False, mul, [0, 1, 3]),
-        Literal(6, False, mul, [1, 2, 4]),
-        Literal(6, False, mul, [3, 2, 5]),
-        Literal(6, True, mul, [0, 4, 5]),
-    ])
-    cl2 = Clause([
-        Literal(6, False, mul, [0, 1, 3]),
-        Literal(6, False, mul, [1, 2, 4]),
-        Literal(6, False, mul, [0, 4, 5]),
-        Literal(6, True, mul, [3, 2, 5]),
-    ])
-    cl3 = Clause([
-        Literal(2, False, one, [0]),
-        Literal(2, True, mul, [0, 1, 1]),
-    ])
-    cl4 = Clause([
-        Literal(3, False, inv, [0, 1]),
-        Literal(3, False, mul, [1, 0, 2]),
-        Literal(3, True, one, [2])
-    ])
-
-    thy = Theory([mul, inv, one], [cl1, cl2, cl3, cl4])
+    thy = Theory(
+        [equ, mul, inv, one],
+        [
+            Clause([
+                Literal(6, False, mul, [0, 1, 3]),
+                Literal(6, False, mul, [1, 2, 4]),
+                Literal(6, False, mul, [3, 2, 5]),
+                Literal(6, True, mul, [0, 4, 5]),
+            ]),
+            Clause([
+                Literal(6, False, mul, [0, 1, 3]),
+                Literal(6, False, mul, [1, 2, 4]),
+                Literal(6, False, mul, [0, 4, 5]),
+                Literal(6, True, mul, [3, 2, 5]),
+            ]),
+            Clause([
+                Literal(2, False, one, [0]),
+                Literal(2, True, mul, [0, 1, 1]),
+            ]),
+            Clause([
+                Literal(3, False, inv, [0, 1]),
+                Literal(3, False, mul, [1, 0, 2]),
+                Literal(3, True, one, [2]),
+            ]),
+        ])
 
     thy.create_tables(2)
-    mul.set_value([0, 1, 0], 1)
+    # equ.set_equality()
+    lit = Literal(3, True, mul, [0, 0, 2])
+    lit.set_constant(1)
+    # one.set_value([1], -1)
+    # mul.set_value([0, 0, 0], 1)
+    # mul.set_value([0, 1, 1], 1)
     thy.print_tables()
-
-    a = thy.clauses[0].get_table()
-    print(thy.clauses[0])
-    print(a.flatten())
+    thy.print_satisfied()
 
 
 if __name__ == '__main__':

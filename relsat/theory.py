@@ -37,6 +37,37 @@ class Symbol:
         shape = [size for _ in range(self.arity)]
         self.table = numpy.zeros(shape=shape, dtype=numpy.int8)
 
+    def get_size(self):
+        """
+        Returns the size of the underlying universe (the relation must be at
+        least unary).
+        """
+        assert self.table is not None and self.table.shape
+        return self.table.shape[0]
+
+    def set_constant(self, value: int):
+        self.table.fill(value)
+
+    def set_equality(self):
+        assert self.arity == 2
+        self.table.fill(-1)
+        numpy.fill_diagonal(self.table, 1)
+
+    def update_masked(self, mask: numpy.ndarray, value: int):
+        """
+        Sets the values specified by the boolean mask array to the specified
+        value. Also verifies that the sign of assigned values do not change.
+        """
+        assert mask.ndim == self.arity and mask.dtype == bool
+
+        # tests if we are not overwriting anything that is already set
+        if value > 0:
+            assert not numpy.logical_and(self.table < 0, mask).any()
+        elif value < 0:
+            assert not numpy.logical_and(self.table > 0, mask).any()
+
+        self.table[mask] = value
+
     def print_table(self):
         print(self.table.flatten())
 
@@ -46,19 +77,20 @@ class Symbol:
 
     def set_value(self, coords: List[int], value: int):
         assert len(coords) == self.arity
+        assert self.table[tuple(coords)] in [0, value]
         self.table[tuple(coords)] = value
 
 
 class Literal:
-    def __init__(self, univs: int, sign: bool, symbol: 'Symbol', vars: List[int]):
+    def __init__(self, arity: int, sign: bool, symbol: 'Symbol', vars: List[int]):
         """
-        A literal in a universally classified clause with univs many free variables.
+        A literal in a universally classified clause with arity many free variables.
         The list of vars specify the mapping of coordinates of the relation to the
         set of free variables. The sign is true if this is a positive literal.
         """
-        assert univs >= 0 and len(vars) == symbol.arity
-        assert all(0 <= var < univs for var in vars)
-        self.univs = univs
+        assert arity >= 0 and len(vars) == symbol.arity
+        assert all(0 <= var < arity for var in vars)
+        self.arity = arity
         self.symbol = symbol
         self.sign = sign
         self.vars = vars
@@ -72,9 +104,10 @@ class Literal:
         """
         Creates a view into the underlying symbol table with properly
         permuted axes, repeated axes diagonalized and unused axes set
-        to the broadcasting dimension of 1.
+        to new broadcasting dimensions of size 1.
         """
-        table = self.symbol.table
+        table = self.symbol.table.view()
+        assert table is not None
 
         # remove repeated axes
         vars = []
@@ -86,38 +119,95 @@ class Literal:
                 vars.append(var)
         assert len(vars) == len(table.shape)
 
-        # add broadcasting axes
+        # add dummy axes
         shape = list(table.shape)
-        shape.extend(1 for _ in range(self.univs - len(vars)))
-        table = table.reshape(shape)
+        shape.extend(1 for _ in range(self.arity - len(vars)))
+        table.shape = shape
 
         # permute axes
         unused = len(vars)
         axes = []
-        for var in range(self.univs):
+        for var in range(self.arity):
             if var in vars:
                 axes.append(vars.index(var))
             else:
                 axes.append(unused)
                 unused += 1
-        assert unused == self.univs
+        assert unused == self.arity
         self.table = table.transpose(axes)
 
         # make sure that we have a view to the original data
         assert self.table.dtype == numpy.int8
         assert self.table.base is self.symbol.table
 
+    def update_masked(self, mask: numpy.ndarray, value: int):
+        """
+        Sets the values specified by the boolean mask array to the specified
+        value. Also verifies that the sign of assigned values do not change.
+        The dummy variables are removed from the mask by taking disjunctions.
+        """
+        assert mask.ndim == self.arity and mask.dtype == bool
+
+        # fix the sign of value
+        if not self.sign:
+            value = -value
+
+        # remove dummy axes
+        axes = []
+        for var in self.vars:
+            if var not in axes:
+                axes.append(var)
+        keep = len(axes)
+        for var in range(self.arity):
+            if var not in axes:
+                axes.append(var)
+        mask = mask.view().transpose(axes)
+        if keep < self.arity:
+            mask.shape = list(mask.shape[:keep]) + [-1]
+            mask = mask.any(axis=-1, keepdims=False)
+
+        # zero arity case (no size info)
+        if keep == 0:
+            self.symbol.update_masked(mask, value)
+            return
+
+        # calculate equality constraints and reshape
+        size = self.symbol.get_size()
+        eye1 = numpy.eye(size, dtype=bool)
+        equs = numpy.ones([size for _ in range(self.symbol.arity)], dtype=bool)
+
+        shape = []
+        for idx, var in enumerate(self.vars):
+            pos = self.vars.index(var)
+            if pos < idx:
+                shape.append(1)
+                eye2 = eye1.view()
+                eye2.shape = [size if i == pos or i == idx else 1
+                              for i in range(self.symbol.arity)]
+                equs = numpy.logical_and(equs, eye2)
+            else:
+                pos = axes.index(var)
+                shape.append(mask.shape[pos])
+
+        mask.shape = shape
+        mask = numpy.logical_and(mask, equs)
+        self.symbol.update_masked(mask, value)
+
+    def set_constant(self, value: int):
+        mask = numpy.ones([1 for _ in range(self.arity)], dtype=bool)
+        self.update_masked(mask, value)
+
     def get_table(self):
         return self.table if self.sign else -self.table
 
     def get_value(self, coords: List[int]) -> int:
-        assert len(coords) == self.univs
+        assert len(coords) == self.arity
         coords = [coords[var] for var in self.vars]
         value = self.symbol.get_value(coords)
         return value if self.sign else -value
 
     def set_value(self, coords: List[int], value: int):
-        assert len(coords) == self.univs
+        assert len(coords) == self.arity
         coords = [coords[var] for var in self.vars]
         self.symbol.set_value(coords, value if self.sign else -value)
 
@@ -125,8 +215,8 @@ class Literal:
 class Clause:
     def __init__(self, literals: List['Literal']):
         assert literals
-        self.univs = literals[0].univs
-        assert all(lit.univs == self.univs for lit in literals[1:])
+        self.arity = literals[0].arity
+        assert all(lit.arity == self.arity for lit in literals[1:])
         self.literals = literals
 
     def __str__(self):
@@ -136,13 +226,34 @@ class Clause:
         for lit in self.literals:
             lit.create_table()
 
+        # do propagation here
+        if len(self.literals) == 1:
+            self.literals[0].set_constant(1)
+
     def get_table(self):
+        """
+        Returns the disjunction of all literals.
+        """
         table = self.literals[0].get_table()
         for lit in self.literals[1:]:
             table = numpy.maximum(table, lit.get_table())
 
         assert table.dtype == numpy.int8
         return table
+
+    def satisfied(self) -> int:
+        """
+        Returns a positive integer if this clause if satisfied
+        in all combination of universally quantified variables,
+        zero if it satisfied in some cases but undefined in others,
+        and negative value if there is at least one case where it
+        is not satisfied.
+        """
+        return numpy.amin(self.get_table())
+
+    def propagate(self):
+        for idx in range(len(self.literals)):
+            pass
 
 
 class Theory:
@@ -173,3 +284,8 @@ class Theory:
     def print_tables(self):
         for sym in self.symbols:
             print(sym.name + ": " + str(sym.table.flatten()))
+
+    def print_satisfied(self):
+        for cla in self.clauses:
+            val = cla.satisfied()
+            print(str(cla) + ": " + str(val))
