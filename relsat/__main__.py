@@ -51,14 +51,13 @@ def run():
         ])
 
     thy.create_tables(2)
-    # equ.set_equality()
-    lit = Literal(3, True, mul, [0, 0, 2])
-    lit.set_constant(1)
-    # one.set_value([1], -1)
-    # mul.set_value([0, 0, 0], 1)
-    # mul.set_value([0, 1, 1], 1)
+    equ.set_equality()
+    one.set_value([1], -1)
+    mul.set_value([0, 0, 0], 1)
+    mul.set_value([0, 1, 1], 1)
     thy.print_tables()
-    thy.print_satisfied()
+    thy.propagate()
+    thy.print_tables()
 
 
 if __name__ == '__main__':

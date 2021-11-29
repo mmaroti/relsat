@@ -19,9 +19,16 @@ import numpy
 
 
 class Symbol:
+    """
+    This represents a relational symbol with a given arity and optionally a
+    value table storing the tuples in this relation. The value is positive if
+    the given tuple is in the relation, it is negative if it is not, and it
+    is zero if it is still unknown whether it is inside the relation or not.
+    """
+
     def __init__(self, name: str, arity: int):
         """
-        A relational symbol with the given name and arity.
+        Creates the relational symbol with the given name and arity.
         """
         assert arity >= 0
         self.name = name
@@ -32,31 +39,42 @@ class Symbol:
         return self.name + "(" + \
             ",".join("x" + str(var) for var in range(self.arity)) + ")"
 
-    def create_table(self, size: int):
-        assert size >= 1
-        shape = [size for _ in range(self.arity)]
-        self.table = numpy.zeros(shape=shape, dtype=numpy.int8)
-
     def get_size(self):
         """
         Returns the size of the underlying universe (the relation must be at
         least unary).
         """
-        assert self.table is not None and self.table.shape
+        assert self.arity > 0 and self.table is not None
         return self.table.shape[0]
 
+    def create_table(self, size: int):
+        """
+        Creates an empty value table with full of zeros (undefined value).
+        """
+        assert size >= 1
+        shape = [size for _ in range(self.arity)]
+        self.table = numpy.zeros(shape=shape, dtype=numpy.int8)
+
     def set_constant(self, value: int):
+        """
+        Set all values of the table to the given one.
+        """
         self.table.fill(value)
 
     def set_equality(self):
+        """
+        Sets the value in the table to the equality relation of arity 2.
+        """
         assert self.arity == 2
         self.table.fill(-1)
         numpy.fill_diagonal(self.table, 1)
 
-    def update_masked(self, mask: numpy.ndarray, value: int):
+    def update_masked(self, mask: numpy.ndarray, value: int) -> bool:
         """
         Sets the values specified by the boolean mask array to the specified
         value. Also verifies that the sign of assigned values do not change.
+        The mask must broadcast with the value table. Returns whether 
+        something has been updated.
         """
         assert mask.ndim == self.arity and mask.dtype == bool
 
@@ -66,16 +84,24 @@ class Symbol:
         elif value < 0:
             assert not numpy.logical_and(self.table > 0, mask).any()
 
+        changed = numpy.logical_and(self.table == 0, mask).any()
         self.table[mask] = value
+        return changed
 
     def print_table(self):
         print(self.table.flatten())
 
     def get_value(self, coords: List[int]) -> int:
+        """
+        Returns the value at the specific location of the table.
+        """
         assert len(coords) == self.arity
         return self.table[tuple(coords)]
 
     def set_value(self, coords: List[int], value: int):
+        """
+        Sets the value at the specific location of the table.
+        """
         assert len(coords) == self.arity
         assert self.table[tuple(coords)] in [0, value]
         self.table[tuple(coords)] = value
@@ -99,6 +125,13 @@ class Literal:
     def __str__(self):
         return ("+" if self.sign else "-") + str(self.symbol.name) + \
             "(" + ",".join("x" + str(var) for var in self.vars) + ")"
+
+    def get_size(self):
+        """
+        Returns the size of the underlying universe (the symbol must be at
+        least unary).
+        """
+        return self.symbol.get_size()
 
     def create_table(self):
         """
@@ -140,13 +173,18 @@ class Literal:
         assert self.table.dtype == numpy.int8
         assert self.table.base is self.symbol.table
 
-    def update_masked(self, mask: numpy.ndarray, value: int):
+    def update_masked(self, mask: numpy.ndarray, value: int) -> bool:
         """
         Sets the values specified by the boolean mask array to the specified
         value. Also verifies that the sign of assigned values do not change.
         The dummy variables are removed from the mask by taking disjunctions.
+        Returns whether something has been updated.
         """
         assert mask.ndim == self.arity and mask.dtype == bool
+
+        # speed optimization
+        if not mask.any():
+            return False
 
         # fix the sign of value
         if not self.sign:
@@ -168,11 +206,10 @@ class Literal:
 
         # zero arity case (no size info)
         if keep == 0:
-            self.symbol.update_masked(mask, value)
-            return
+            return self.symbol.update_masked(mask, value)
 
         # calculate equality constraints and reshape
-        size = self.symbol.get_size()
+        size = self.get_size()
         eye1 = numpy.eye(size, dtype=bool)
         equs = numpy.ones([size for _ in range(self.symbol.arity)], dtype=bool)
 
@@ -191,7 +228,7 @@ class Literal:
 
         mask.shape = shape
         mask = numpy.logical_and(mask, equs)
-        self.symbol.update_masked(mask, value)
+        return self.symbol.update_masked(mask, value)
 
     def set_constant(self, value: int):
         mask = numpy.ones([1 for _ in range(self.arity)], dtype=bool)
@@ -251,9 +288,30 @@ class Clause:
         """
         return numpy.amin(self.get_table())
 
-    def propagate(self):
-        for idx in range(len(self.literals)):
-            pass
+    def propagate(self) -> bool:
+        """
+        Propagates forced values for this clause. Returns whether
+        anything has been updated.
+        """
+        # this is already done
+        if len(self.literals) <= 1:
+            return False
+
+        print(self)
+        updated = False
+        for target in range(len(self.literals)):
+            value = None
+            for idx, lit in enumerate(self.literals):
+                if idx == target:
+                    continue
+                if value is None:
+                    value = lit.get_table()
+                else:
+                    value = numpy.maximum(value, lit.get_table())
+            assert value.dtype == numpy.int8
+            print(idx, value.flatten())
+
+        return updated
 
 
 class Theory:
@@ -289,3 +347,10 @@ class Theory:
         for cla in self.clauses:
             val = cla.satisfied()
             print(str(cla) + ": " + str(val))
+
+    def propagate(self):
+        updated = False
+        for cla in self.clauses:
+            if cla.propagate():
+                updated = True
+        return updated
