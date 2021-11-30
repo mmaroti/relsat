@@ -62,6 +62,11 @@ def run():
                 Literal(2, False, one, [0]),
                 Literal(2, False, one, [1]),
                 Literal(2, True, equ, [0, 1]),
+            ]),
+            Clause([
+                Literal(2, False, inv, [1, 1]),
+                Literal(2, False, mul, [1, 1, 0]),
+                Literal(2, True, mul, [1, 0, 1]),
             ])
         ])
 
@@ -69,16 +74,19 @@ def run():
     equ.set_equality()
     thy.print()
 
-    # one.set_value([0], 1)
+    one.set_value([0], 1)
+    thy.propagate()
+    thy.print()
+
     mul.set_value([1, 0, 1], -1)
     thy.propagate()
     thy.print()
 
-    inv.set_value([1, 1], 1)
+    inv.set_value([1, 1], -1)
     thy.propagate()
     thy.print()
 
-    mul.set_value([1, 1, 0], 1)
+    inv.set_value([0, 0], 1)
     thy.propagate()
     thy.print()
 
